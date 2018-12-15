@@ -1,3 +1,4 @@
+from __future__ import print_function
 #import librosa
 import soundfile as sf
 import numpy as np
@@ -5,7 +6,7 @@ from numpy import float32,float64
 import sys
 import time
 
-__version__ = '0.5'
+__version__ = '0.5.1'
 
 before = time.time()
 start = before
@@ -23,7 +24,7 @@ audio_path = 'Audio/sample.wav'
 f0 = 146.0 # sys.argv[2]
 f_diff = 2.0 # sys.argv[3]
 
-A = 0.5
+#A = 0.5
 
 def gen_cosine(frequency, length, sr=44100, phase=None):
     step = 1.0/sr
