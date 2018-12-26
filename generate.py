@@ -1,30 +1,23 @@
 from __future__ import print_function
-#import librosa
-import soundfile as sf
+import librosa
 import numpy as np
 from numpy import float32,float64
 import sys
 import time
-
-__version__ = '0.5.1'
+import subprocess as sp
 
 before = time.time()
 start = before
 
-# TODO:
-#   get wav file by wget
-#   compress file - ffmpeg?
-#   generate stream url (apache -> http cgi)
-
 L = 0
 R = 1
 
-audio_path = 'Audio/sample.wav'
+audio_path = sys.argv[1]
 
 f0 = 146.0 # sys.argv[2]
 f_diff = 2.0 # sys.argv[3]
 
-#A = 0.5
+A = 0.5
 
 def gen_cosine(frequency, length, sr=44100, phase=None):
     step = 1.0/sr
@@ -34,16 +27,14 @@ def gen_cosine(frequency, length, sr=44100, phase=None):
     return np.cos((2 * np.pi * frequency * (np.arange(step * length, step=step))+phase),
                    dtype=np.float32)
 
-def amp_mod(sig, amp_array, sr, fade_dur=1.0):
+def amp_mod(sig, amp_array, fade_dur=1.0):
     ''' Amplitude Modulation based on the evelope array given 
-        param:
-            sig: original signal
-            amp_array: an array of amplitude values (0.0~1.0) for each sample 
-            * both should be numpy array with the same length
+        param: sig should be a numpy array
+               amp_array is a list with the same length as sig
         return: 
                numpy array modulated
     '''
-    # global sr
+    global sr
     # fade in and out
     fade_length = fade_dur*sr
     fade_length = int(fade_length)
@@ -57,28 +48,47 @@ def amp_mod(sig, amp_array, sr, fade_dur=1.0):
 
     return sig * amp_array
 
-
-# Load a wav file
-y, sr = sf.read(audio_path, dtype='float32')
-y = y.T
-#y, sr = librosa.load(audio_path,sr=None, mono=False)
+# Load the audio
+y, sr = librosa.load(audio_path,sr=None, mono=False, duration=None)
 gen_len =  len(y[L])
 print ("Load",time.time()-before)
 before = time.time()
 
-# Generate sine waves with two different freq for the two channels
+# Generate the sine signal with differenty frequency for the two channels
 tone = np.ndarray(shape=(2,gen_len),dtype=float32)
 tone[L] = gen_cosine(f0, gen_len)
 tone[R] = gen_cosine(f0+f_diff, gen_len)
-print ("generate sine",time.time()-before)
+print ("Generate Sine",time.time()-before)
 before = time.time()
 
-# A temporary envelope array
-envelope = np.ones(gen_len) * A
+# Get envelope by calculating RMS of short-term energy
+hop_length = sr/2 #sr/2
+frame_length = hop_length * 2
 
-# AM
-tone[L] = amp_mod(tone[L], envelope, sr, 1.0 )
-tone[R] = amp_mod(tone[R], envelope, sr, 1.0 )
+env = librosa.feature.rmse(y=y, frame_length=frame_length, hop_length=hop_length)
+print ("Calculate Envelope",time.time()-before)
+before = time.time()
+
+env_array = np.zeros(gen_len, dtype=float32)
+for idx,energy in enumerate(env[0]):
+    offset = idx * hop_length
+    #energy = energy * 0.85 + 0.15
+    energy = energy *0.70 + 0.30
+    try:
+        #env_array[offset:offset+hop_length] = [energy] * hop_length 
+        env_array[offset:offset+hop_length] = np.full(hop_length, energy, dtype=float32)
+    except:
+    #    print 'last offset: %d' % offset
+        last_len = len(env_array[offset:])
+    #    print 'last length: %d' % last_len
+        env_array[offset:] = np.full(last_len, energy, dtype=float32)
+
+print ("Calculate Envelope Array",time.time()-before)
+before = time.time()
+
+# Amplitude Modulate tones
+tone[L] = amp_mod(tone[L], env_array, fade_dur=1.0 )
+tone[R] = amp_mod(tone[R], env_array, fade_dur=1.0 )
 print ("AM",time.time()-before)
 before = time.time()
 
@@ -86,9 +96,18 @@ before = time.time()
 y[L] = y[L] + tone[L]
 y[R] = y[R] + tone[R]
 
-#test_tone = np.asarray(y, dtype=float32)
-#print time.time()-before
+# Apply a limiter to tackle clipping
+#limiter = Limiter(attack_coeff, release_coeff, delay, threshold)
+#y[L] = limitter.limit(y[L])
+#y[R] = limiiter.limit(y[R])
 
-# librosa.output.write_wav('test.wav', y=y, sr=sr)
-sf.write('out.wav', y.T, sr, 'PCM_16')
-print "Time used: {}".format( time.time()-start )
+# Write audio file
+librosa.output.write_wav('test.wav', y , sr=sr, norm=True)
+cmd = "./ffmpeg -v quiet -i test.wav -acodec pcm_s16le -vn -y out.wav"
+ret = None
+ret = sp.call(cmd, shell=True)
+print ("Ret: {}, Time used: {}".format( ret, time.time()-start ))
+
+# Finally encode wav to m4a (could be commented out)
+sp.call("./ffmpeg -i out.wav -c:a aac -q:a 2 -y binaural_out.m4a", shell=True)
+
