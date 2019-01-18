@@ -50,7 +50,7 @@ def amp_mod(sig, amp_array, fade_dur=1.0):
 
 # Load the audio
 y, sr = librosa.load(audio_path,sr=None, mono=False, duration=None)
-gen_len =  len(y[L])
+gen_len =  len(y[R]) - 1
 print ("Load",time.time()-before)
 before = time.time()
 
@@ -72,8 +72,8 @@ before = time.time()
 env_array = np.zeros(gen_len, dtype=float32)
 for idx,energy in enumerate(env[0]):
     offset = idx * hop_length
-    #energy = energy * 0.85 + 0.15
-    energy = energy *0.70 + 0.30
+    energy = energy * 0.85 + 0.15
+    #energy = energy *0.70 + 0.30
     try:
         #env_array[offset:offset+hop_length] = [energy] * hop_length 
         env_array[offset:offset+hop_length] = np.full(hop_length, energy, dtype=float32)
@@ -93,8 +93,8 @@ print ("AM",time.time()-before)
 before = time.time()
 
 # Mix signals together
-y[L] = y[L] + tone[L]
-y[R] = y[R] + tone[R]
+y[L][:-1] = y[L][:-1] + tone[L]
+y[R][:-1] = y[R][:-1] + tone[R]
 
 # Apply a limiter to tackle clipping
 #limiter = Limiter(attack_coeff, release_coeff, delay, threshold)
@@ -103,11 +103,12 @@ y[R] = y[R] + tone[R]
 
 # Write audio file
 librosa.output.write_wav('test.wav', y , sr=sr, norm=True)
-cmd = "./ffmpeg -v quiet -i test.wav -acodec pcm_s16le -vn -y out.wav"
-ret = None
-ret = sp.call(cmd, shell=True)
-print ("Ret: {}, Time used: {}".format( ret, time.time()-start ))
+print ("done.")
+#cmd = "./ffmpeg -v quiet -i test.wav -acodec pcm_s16le -vn -y out.wav"
+#ret = None
+#ret = sp.call(cmd, shell=True)
+#print ("Ret: {}, Time used: {}".format( ret, time.time()-start ))
 
 # Finally encode wav to m4a (could be commented out)
-sp.call("./ffmpeg -i out.wav -c:a aac -q:a 2 -y binaural_out.m4a", shell=True)
+#sp.call("./ffmpeg -i out.wav -c:a aac -q:a 2 -y binaural_out.m4a", shell=True)
 
